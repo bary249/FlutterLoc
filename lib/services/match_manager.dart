@@ -1,3 +1,4 @@
+import 'dart:async';
 import '../models/match_state.dart';
 import '../models/player.dart';
 import '../models/deck.dart';
@@ -9,6 +10,15 @@ import 'combat_resolver.dart';
 class MatchManager {
   MatchState? _currentMatch;
   final CombatResolver _combatResolver = CombatResolver();
+
+  /// Callback for UI updates during combat animation
+  void Function()? onCombatUpdate;
+
+  /// Current tick being displayed (for animation)
+  int currentAnimationTick = 0;
+
+  /// Is combat animation in progress?
+  bool isAnimating = false;
 
   MatchState? get currentMatch => _currentMatch;
 
@@ -104,11 +114,13 @@ class MatchManager {
     }
   }
 
-  /// Resolve combat in all lanes
-  void _resolveCombat() {
+  /// Resolve combat in all lanes with animation
+  Future<void> _resolveCombat() async {
     if (_currentMatch == null) return;
 
     _currentMatch!.currentPhase = MatchPhase.combatPhase;
+    isAnimating = true;
+    currentAnimationTick = 0;
 
     // Clear previous combat log
     _combatResolver.clearLog();
@@ -118,12 +130,45 @@ class MatchManager {
     print('TURN ${_currentMatch!.turnNumber} - COMBAT RESOLUTION');
     print('=' * 80);
 
-    // Resolve each lane
+    // Animate through each tick (1-5)
+    for (int tick = 1; tick <= 5; tick++) {
+      currentAnimationTick = tick;
+
+      // Process this tick for all lanes
+      for (final lane in _currentMatch!.lanes) {
+        if (lane.hasActiveCards) {
+          _combatResolver.processTickForLane(tick, lane);
+        }
+      }
+
+      // Update UI
+      onCombatUpdate?.call();
+
+      // Wait before next tick (animation delay)
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      // Check if all combat is done
+      bool allLanesDone = true;
+      for (final lane in _currentMatch!.lanes) {
+        if (lane.hasActiveCards &&
+            !lane.playerStack.isEmpty &&
+            !lane.opponentStack.isEmpty) {
+          allLanesDone = false;
+          break;
+        }
+      }
+      if (allLanesDone) break;
+    }
+
+    // Final cleanup and log end for all lanes
     for (final lane in _currentMatch!.lanes) {
       if (lane.hasActiveCards) {
-        _combatResolver.resolveLane(lane);
+        _combatResolver.logLaneEnd(lane);
       }
     }
+
+    isAnimating = false;
+    currentAnimationTick = 0;
 
     // Print combat log to terminal
     print('\n--- BATTLE LOG ---');
@@ -143,8 +188,12 @@ class MatchManager {
     // Check for game over
     _currentMatch!.checkGameOver();
 
+    // Update UI one final time
+    onCombatUpdate?.call();
+
     if (!_currentMatch!.isGameOver) {
       _startNextTurn();
+      onCombatUpdate?.call();
     }
   }
 

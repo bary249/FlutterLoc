@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/deck.dart';
 import '../models/match_state.dart';
@@ -27,10 +28,26 @@ class _TestMatchScreenState extends State<TestMatchScreen> {
 
   GameCard? _selectedCard;
 
+  // 20-second turn timer
+  Timer? _turnTimer;
+  int _secondsLeft = 20;
+  static const int _turnDuration = 20;
+
   @override
   void initState() {
     super.initState();
+    // Wire up combat animation callback
+    _matchManager.onCombatUpdate = () {
+      if (mounted) setState(() {});
+    };
     _startNewMatch();
+  }
+
+  @override
+  void dispose() {
+    _turnTimer?.cancel();
+    _matchManager.onCombatUpdate = null;
+    super.dispose();
   }
 
   void _startNewMatch() {
@@ -44,6 +61,55 @@ class _TestMatchScreenState extends State<TestMatchScreen> {
       opponentIsAI: true,
     );
     _clearStaging();
+    _resetTimer();
+    setState(() {});
+  }
+
+  void _resetTimer() {
+    _turnTimer?.cancel();
+    _secondsLeft = _turnDuration;
+    _turnTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      final match = _matchManager.currentMatch;
+      if (match == null || match.isGameOver || match.playerSubmitted) {
+        timer.cancel();
+        return;
+      }
+
+      // Pause timer during combat animation
+      if (_matchManager.isAnimating) {
+        return;
+      }
+
+      setState(() {
+        _secondsLeft--;
+      });
+
+      if (_secondsLeft <= 0) {
+        timer.cancel();
+        _autoSubmitTurn();
+      }
+    });
+  }
+
+  void _autoSubmitTurn() {
+    // Auto-submit with whatever cards are staged (or none)
+    final match = _matchManager.currentMatch;
+    if (match == null || match.playerSubmitted) return;
+
+    // Submit even if no cards placed
+    _matchManager.submitPlayerMoves(Map.from(_stagedCards));
+
+    // AI makes its moves
+    final aiMoves = _ai.generateMoves(match.opponent);
+    _matchManager.submitOpponentMoves(aiMoves);
+
+    _clearStaging();
+    _resetTimer(); // Start timer for next turn
     setState(() {});
   }
 
@@ -100,8 +166,9 @@ class _TestMatchScreenState extends State<TestMatchScreen> {
     final aiMoves = _ai.generateMoves(match.opponent);
     _matchManager.submitOpponentMoves(aiMoves);
 
-    // Clear staging
+    // Clear staging and reset timer
     _clearStaging();
+    _resetTimer();
     setState(() {});
   }
 
@@ -118,14 +185,73 @@ class _TestMatchScreenState extends State<TestMatchScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Turn ${match.turnNumber} - ${match.currentPhase.name}'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Turn ${match.turnNumber} - ${match.currentPhase.name}'),
+            if (_matchManager.isAnimating) ...[
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.bolt, size: 14, color: Colors.yellow),
+                    const SizedBox(width: 4),
+                    Text(
+                      'TICK ${_matchManager.currentAnimationTick}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
         actions: [
+          // Timer display
+          if (!match.isGameOver &&
+              !match.playerSubmitted &&
+              !_matchManager.isAnimating)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: _secondsLeft <= 5 ? Colors.red : Colors.orange,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.timer, size: 18, color: Colors.white),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${_secondsLeft}s',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (match.isGameOver)
             IconButton(
               icon: const Icon(Icons.refresh),
               onPressed: _startNewMatch,
             ),
-          if (!match.isGameOver && !match.playerSubmitted)
+          if (!match.isGameOver &&
+              !match.playerSubmitted &&
+              !_matchManager.isAnimating)
             IconButton(
               icon: const Icon(Icons.clear_all),
               onPressed: () {
@@ -137,7 +263,8 @@ class _TestMatchScreenState extends State<TestMatchScreen> {
         ],
       ),
       body: match.isGameOver ? _buildGameOver(match) : _buildMatchView(match),
-      floatingActionButton: match.isGameOver || match.playerSubmitted
+      floatingActionButton:
+          match.isGameOver || match.playerSubmitted || _matchManager.isAnimating
           ? null
           : FloatingActionButton.extended(
               onPressed: _submitTurn,

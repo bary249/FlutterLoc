@@ -37,6 +37,7 @@ dependencies:
   riverpod: ^2.4.9
   vector_math: ^2.1.4
   cupertino_icons: ^1.0.8
+  google_fonts: ^6.1.0
 
 dev_dependencies:
   flutter_test:

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'screens/test_match_screen.dart';
 
 void main() {
@@ -16,7 +17,16 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
-        appBarTheme: const AppBarTheme(centerTitle: true, elevation: 2),
+        textTheme: GoogleFonts.quicksandTextTheme(Theme.of(context).textTheme),
+        appBarTheme: AppBarTheme(
+          centerTitle: true,
+          elevation: 2,
+          titleTextStyle: GoogleFonts.quicksand(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
       ),
       home: const TestMatchScreen(),
     );

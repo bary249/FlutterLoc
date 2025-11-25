@@ -247,4 +247,39 @@ class CombatResolver {
   void clearLog() {
     combatLog.clear();
   }
+
+  /// Process a single tick for a lane (for animated combat)
+  void processTickForLane(int tick, Lane lane) {
+    final laneName = _getLaneName(lane.position);
+
+    // Log battle start on tick 1
+    if (tick == 1) {
+      combatLog.add(
+        BattleLogEntry(
+          tick: 0,
+          laneDescription: laneName,
+          action: '⚔️ BATTLE START',
+          details: 'Combat begins in $laneName',
+          isImportant: true,
+        ),
+      );
+    }
+
+    // Process the tick
+    _processTick(tick, lane, laneName);
+
+    // Clean up dead cards after this tick
+    lane.playerStack.cleanup();
+    lane.opponentStack.cleanup();
+  }
+
+  /// Log the end of a lane battle (for animated combat)
+  void logLaneEnd(Lane lane) {
+    final laneName = _getLaneName(lane.position);
+
+    // Only log if there was actual combat
+    if (lane.playerStack.isEmpty || lane.opponentStack.isEmpty) {
+      _logBattleEnd(5, lane, laneName);
+    }
+  }
 }
